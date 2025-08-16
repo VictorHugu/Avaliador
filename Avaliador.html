@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Avaliador Victor & Alice — Firebase + Fotos + Mapa</title>
+  <meta name="theme-color" content="#6b21a8" />
+  <!-- Tailwind (estilo rápido e responsivo) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet (mapa grátis, sem API key) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Firebase (Auth, Firestore, Storage) - compat para uso direto em <script> -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
+  <style>
+    .card { @apply bg-white/90 backdrop-blur rounded-2xl shadow-lg border border-purple-200; }
+    .pill { @apply px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700; }
+    .btn { @apply px-4 py-2 font-semibold rounded-xl shadow transition active:scale-95; }
+    .btn-primary { @apply bg-purple-600 text-white hover:bg-purple-700; }
+    .btn-ghost { @apply bg-white text-purple-700 border border-purple-200 hover:bg-purple-50; }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-purple-50 via-rose-50 to-cyan-50 text-slate-800">
+  <div class="max-w-3xl mx-auto p-4">
+    <!-- Header -->
+    <header class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-600 to-cyan-400 shadow"></div>
+        <div>
+          <h1 class="text-xl font-extrabold">Victor & Alice — Avaliador</h1>
+          <p class="text-xs text-slate-500">Compartilhado, com login + mapa + fotos</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="userEmail" class="text-sm text-slate-500 hidden"></span>
+        <button id="btnSair" class="btn btn-ghost hidden">Sair</button>
+      </div>
+    </header>
+
+    <!-- Login -->
+    <section id="secLogin" class="card p-5">
+      <h2 class="text-lg font-bold mb-2">🔒 Entrar</h2>
+      <p class="text-sm text-slate-500 mb-3">Use o e‑mail e senha criados no Firebase (ex.: você e a Alice).</p>
+      <div class="grid gap-2">
+        <input id="email" type="email" placeholder="email" class="border rounded-lg p-2" />
+        <input id="senha" type="password" placeholder="senha" class="border rounded-lg p-2" />
+        <button id="btnEntrar" class="btn btn-primary">Entrar</button>
+        <p id="msgLogin" class="text-sm text-rose-600 hidden"></p>
+      </div>
+    </section>
+
+    <!-- App -->
+    <section id="secApp" class="hidden">
+      <!-- Filtros -->
+      <div class="card p-4 mb-4">
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="flex-1 min-w-[170px]">
+            <label class="text-xs text-slate-500">Buscar por nome</label>
+            <input id="fBusca" type="search" placeholder="Ex.: Bistrô da Praça" class="border rounded-lg p-2 w-full" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">Filtrar por mês</label>
+            <input id="fMes" type="month" class="border rounded-lg p-2" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">De</label>
+            <input id="fDe" type="date" class="border rounded-lg p-2" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">Até</label>
+            <input id="fAte" type="date" class="border rounded-lg p-2" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">Ordenação</label>
+            <select id="fOrdena" class="border rounded-lg p-2">
+              <option value="recente">Mais recentes</option>
+              <option value="media_desc">Maior média</option>
+              <option value="media_asc">Menor média</option>
+              <option value="nome_asc">Nome A→Z</option>
+            </select>
+          </div>
+          <button id="btnLimparFiltros" class="btn btn-ghost">Limpar filtros</button>
+        </div>
+      </div>
+
+      <!-- Formulário -->
+      <form id="form" class="card p-4 mb-4">
+        <div class="grid gap-2">
+          <input id="nome" placeholder="Nome do lugar" class="border rounded-lg p-2" required />
+          <div class="grid grid-cols-2 gap-2">
+            <select id="autor" class="border rounded-lg p-2">
+              <option value="Victor">Victor</option>
+              <option value="Alice">Alice</option>
+            </select>
+            <select id="categoria" class="border rounded-lg p-2">
+              <option>Restaurante</option>
+              <option>Café</option>
+              <option>Bar</option>
+              <option>Sorveteria</option>
+              <option>Outro</option>
+            </select>
+          </div>
+          <textarea id="comentario" placeholder="Comentário" class="border rounded-lg p-2"></textarea>
+          <label class="text-xs text-slate-500">Fotos (você pode selecionar várias):</label>
+          <input id="fotos" type="file" accept="image/*" multiple class="mb-1" />
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <input id="comida" type="number" min="1" max="10" placeholder="🍲 Comida" class="border rounded-lg p-2" />
+            <input id="musica" type="number" min="1" max="10" placeholder="🎶 Música" class="border rounded-lg p-2" />
+            <input id="ambiente" type="number" min="1" max="10" placeholder="🌆 Ambiente" class="border rounded-lg p-2" />
+            <input id="conforto" type="number" min="1" max="10" placeholder="🛋️ Conforto" class="border rounded-lg p-2" />
+            <input id="atendimento" type="number" min="1" max="10" placeholder="😊 Atendimento" class="border rounded-lg p-2" />
+            <input id="preco" type="number" min="1" max="10" placeholder="💰 Preço" class="border rounded-lg p-2" />
+          </div>
+
+          <div class="mt-2">
+            <label class="text-xs text-slate-500">Mapa (toque para marcar o local)</label>
+            <div id="map" class="h-48 w-full rounded-xl border"></div>
+            <div class="flex gap-2 mt-2">
+              <button type="button" id="btnLoc" class="btn btn-ghost">Usar minha localização</button>
+              <span id="coordsTxt" class="text-xs text-slate-500"></span>
+            </div>
+          </div>
+
+          <button class="btn btn-primary mt-2" id="btnSalvar">Salvar avaliação</button>
+          <p id="msgSalvar" class="text-sm text-slate-500"></p>
+        </div>
+      </form>
+
+      <!-- Histórico -->
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-lg font-bold">📖 Histórico</h2>
+      </div>
+      <div id="historico" class="space-y-6"></div>
+    </section>
+  </div>
+
+  <script>
+    // ===== 1) CONFIGURE O FIREBASE AQUI =====
+    // Troque os valores abaixo pelos do seu projeto (Console Firebase > Project settings > SDK snippet > Config)
+    const firebaseConfig = {
+      apiKey: "AIzaSyApiw4XYNx-iMNyV5Hvht4t8hpqtgC8FFY",
+      authDomain: "victor-alice.firebaseapp.com",
+      projectId: "victor-alice",
+      storageBucket: "victor-alice.firebasestorage.app",
+      appId: "1:825721304248:web:69f29255f33a1306edf04d"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    const storage = firebase.storage();
+
+    // ===== 2) LOGIN =====
+    const secLogin = document.getElementById('secLogin');
+    const secApp = document.getElementById('secApp');
+    const btnEntrar = document.getElementById('btnEntrar');
+    const btnSair = document.getElementById('btnSair');
+    const msgLogin = document.getElementById('msgLogin');
+    const userEmail = document.getElementById('userEmail');
+
+    btnEntrar.onclick = async () => {
+      msgLogin.classList.add('hidden');
+      const email = document.getElementById('email').value.trim();
+      const senha = document.getElementById('senha').value;
+      try {
+        await auth.signInWithEmailAndPassword(email, senha);
+      } catch (e) {
+        msgLogin.textContent = e.message;
+        msgLogin.classList.remove('hidden');
+      }
+    };
+
+    btnSair.onclick = () => auth.signOut();
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        secLogin.classList.add('hidden');
+        secApp.classList.remove('hidden');
+        userEmail.textContent = user.email;
+        userEmail.classList.remove('hidden');
+        btnSair.classList.remove('hidden');
+        iniciarApp(user);
+      } else {
+        secLogin.classList.remove('hidden');
+        secApp.classList.add('hidden');
+        userEmail.classList.add('hidden');
+        btnSair.classList.add('hidden');
+        pararSnapshot();
+      }
+    });
+
+    // ===== 3) MAPA (Leaflet) =====
+    let map, marker, selectedCoords = null;
+    function initMap(){
+      map = L.map('map').setView([-23.55, -46.63], 11); // São Paulo por padrão
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+      map.on('click', (e)=>{
+        if (marker) marker.remove();
+        marker = L.marker(e.latlng).addTo(map);
+        selectedCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
+        document.getElementById('coordsTxt').textContent = `${selectedCoords.lat.toFixed(5)}, ${selectedCoords.lng.toFixed(5)}`;
+      });
+    }
+
+    document.getElementById('btnLoc').onclick = ()=>{
+      if (!navigator.geolocation) return alert('Geolocalização não suportada');
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const { latitude, longitude } = pos.coords;
+        map.setView([latitude, longitude], 15);
+        if (marker) marker.remove();
+        marker = L.marker([latitude, longitude]).addTo(map);
+        selectedCoords = { lat: latitude, lng: longitude };
+        document.getElementById('coordsTxt').textContent = `${selectedCoords.lat.toFixed(5)}, ${selectedCoords.lng.toFixed(5)}`;
+      }, err=> alert('Não foi possível obter localização'));
+    };
+
+    // ===== 4) FORM / SALVAR =====
+    const form = document.getElementById('form');
+    const msgSalvar = document.getElementById('msgSalvar');
+
+    function aliasFromEmail(email){
+      const low = (email||'').toLowerCase();
+      if (low.includes('alice')) return 'Alice';
+      if (low.includes('victor') || low.includes('vitor')) return 'Victor';
+      return 'Victor';
+    }
+
+    form.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return alert('Faça login');
+
+  const nome = document.getElementById('nome').value.trim();
+  const autorSel = document.getElementById('autor').value;
+  const categoria = document.getElementById('categoria').value;
+  const comentario = document.getElementById('comentario').value.trim();
+  const comida = +document.getElementById('comida').value || 0;
+  const musica = +document.getElementById('musica').value || 0;
+  const ambiente = +document.getElementById('ambiente').value || 0;
+  const conforto = +document.getElementById('conforto').value || 0;
+  const atendimento = +document.getElementById('atendimento').value || 0;
+  const preco = +document.getElementById('preco').value || 0;
+  const media = ((comida+musica+ambiente+conforto+atendimento+preco)/6);
+  const fotosInput = document.getElementById('fotos');
+
+  if (!nome) return alert('Informe o nome do lugar');
+
+  msgSalvar.textContent = 'Enviando…';
+  document.getElementById('btnSalvar').disabled = true;
+
+  // Converte fotos para Base64
+  const fotoURLs = [];
+  const files = Array.from(fotosInput.files||[]);
+  for(const file of files){
+    fotoURLs.push(await new Promise((res, rej)=>{
+      const reader = new FileReader();
+      reader.onload = ()=> res(reader.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    }));
+  }
+
+  try{
+    const now = new Date();
+    const dataLocalStr = now.toLocaleDateString('pt-BR');
+    const horaLocalStr = now.toLocaleTimeString('pt-BR');
+    await db.collection('reviews').add({
+      nome,
+      autor: autorSel || aliasFromEmail(user.email),
+      uid: user.uid,
+      categoria,
+      comentario,
+      notas: { comida, musica, ambiente, conforto, atendimento, preco },
+      media,
+      fotos: fotoURLs,
+      coords: selectedCoords||null,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdLocal: `${dataLocalStr} ${horaLocalStr}`
+    });
+    form.reset();
+    if (marker) { marker.remove(); marker = null; }
+    selectedCoords = null;
+    document.getElementById('coordsTxt').textContent = '';
+    msgSalvar.textContent = 'Salvo!';
+  }catch(err){
+    console.error(err);
+    alert('Erro ao salvar: '+err.message);
+  }finally{
+    document.getElementById('btnSalvar').disabled = false;
+    setTimeout(()=> msgSalvar.textContent='', 1200);
+  }
+});
+
+
+    // ===== 5) LISTAGEM + FILTROS =====
+    const historicoEl = document.getElementById('historico');
+    const fBusca = document.getElementById('fBusca');
+    const fMes = document.getElementById('fMes');
+    const fDe = document.getElementById('fDe');
+    const fAte = document.getElementById('fAte');
+    const fOrdena = document.getElementById('fOrdena');
+    const btnLimparFiltros = document.getElementById('btnLimparFiltros');
+
+    let unsubscribe = null;
+    function pararSnapshot(){ if (unsubscribe) { unsubscribe(); unsubscribe = null; } }
+
+    function iniciarApp(user){
+      // inicia mapa ao entrar no app
+      setTimeout(initMap, 0);
+
+      pararSnapshot();
+      unsubscribe = db.collection('reviews').orderBy('createdAt','desc').onSnapshot(snap=>{
+        const all = [];
+        snap.forEach(doc=>{
+          const d = doc.data(); d.id = doc.id;
+          // createdAt pode ser null imediatamente após set(); usar now como fallback
+          d._created = d.createdAt?.toDate?.() || new Date();
+          all.push(d);
+        });
+        renderHistorico( aplicarFiltros(all) );
+      });
+    }
+
+    [fBusca, fMes, fDe, fAte, fOrdena].forEach(el=> el.addEventListener('input', ()=>{
+      // Apenas re-render; os dados vêm do snapshot atual (mantidos em cache abaixo)
+      // Para isso, guardamos o último array
+      if (window.__lastDocs) renderHistorico( aplicarFiltros(window.__lastDocsRaw||[]) );
+    }));
+
+    btnLimparFiltros.onclick = ()=>{
+      fBusca.value = ''; fMes.value = ''; fDe.value = ''; fAte.value=''; fOrdena.value='recente';
+      if (window.__lastDocs) renderHistorico( aplicarFiltros(window.__lastDocsRaw||[]) );
+    };
+
+    function aplicarFiltros(docs){
+      window.__lastDocsRaw = docs.slice();
+      let arr = docs.slice();
+      const q = fBusca.value.trim().toLowerCase();
+      if (q) arr = arr.filter(d => (d.nome||'').toLowerCase().includes(q));
+
+      // filtro por mês (YYYY-MM)
+      if (fMes.value) {
+        const [y,m] = fMes.value.split('-').map(Number);
+        const ini = new Date(y, m-1, 1, 0,0,0);
+        const fim = new Date(y, m, 0, 23,59,59);
+        arr = arr.filter(d => d._created >= ini && d._created <= fim);
+      }
+      // intervalo de datas (date inputs usam fuso local)
+      if (fDe.value) {
+        const [y,m,dia] = fDe.value.split('-').map(Number);
+        const ini = new Date(y, m-1, dia, 0,0,0);
+        arr = arr.filter(d => d._created >= ini);
+      }
+      if (fAte.value) {
+        const [y,m,dia] = fAte.value.split('-').map(Number);
+        const fim = new Date(y, m-1, dia, 23,59,59);
+        arr = arr.filter(d => d._created <= fim);
+      }
+
+      switch(fOrdena.value){
+        case 'media_desc': arr.sort((a,b)=> (b.media||0)-(a.media||0)); break;
+        case 'media_asc': arr.sort((a,b)=> (a.media||0)-(b.media||0)); break;
+        case 'nome_asc': arr.sort((a,b)=> (a.nome||'').localeCompare(b.nome||'')); break;
+        default: arr.sort((a,b)=> (b._created)-(a._created));
+      }
+
+      window.__lastDocs = arr;
+      return arr;
+    }
+
+    function formatDateBR(d){
+      const dd = String(d.getDate()).padStart(2,'0');
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+
+    function renderHistorico(arr){
+      historicoEl.innerHTML = '';
+      if (!arr.length){
+        historicoEl.innerHTML = `<div class="text-center text-slate-500">Sem avaliações ainda com esses filtros.</div>`;
+        return;
+      }
+      // Agrupar por dia
+      const grupos = {};
+      arr.forEach(d=>{
+        const key = formatDateBR(d._created);
+        if(!grupos[key]) grupos[key] = [];
+        grupos[key].push(d);
+      });
+      const dias = Object.keys(grupos).sort((a,b)=>{
+        const [da,ma,ya] = a.split('/').map(Number);
+        const [db,mb,yb] = b.split('/').map(Number);
+        return new Date(yb,mb-1,db) - new Date(ya,ma-1,da);
+      });
+
+      dias.forEach(dia=>{
+        const wrapDia = document.createElement('div');
+        wrapDia.innerHTML = `<h3 class="font-bold text-purple-800 mb-2">📅 ${dia}</h3>`;
+        grupos[dia].forEach(doc=> wrapDia.appendChild(renderItem(doc)));
+        historicoEl.appendChild(wrapDia);
+      });
+    }
+
+    function renderItem(it){
+      const el = document.createElement('div');
+      el.className = 'card p-4';
+      const mediaStr = (it.media||0).toFixed(1);
+      el.innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h4 class="text-lg font-bold">${it.nome||''}</h4>
+            <div class="text-xs text-slate-500">✍️ ${it.autor||''} • ${it.createdLocal||''} ${it.categoria?`• <span class='pill'>${it.categoria}</span>`:''}</div>
+          </div>
+          <div class="text-right">
+            <div class="text-2xl font-extrabold">${mediaStr}</div>
+            <div class="text-xs text-slate-500">média</div>
+          </div>
+        </div>
+        <p class="mt-2">${it.comentario||''}</p>
+        <div class="mt-2 text-sm text-slate-600">🍲 ${it.notas?.comida||0} • 🎶 ${it.notas?.musica||0} • 🌆 ${it.notas?.ambiente||0} • 🛋️ ${it.notas?.conforto||0} • 😊 ${it.notas?.atendimento||0} • 💰 ${it.notas?.preco||0}</div>
+      `;
+
+      // Galeria de fotos
+      if (Array.isArray(it.fotos) && it.fotos.length){
+        const gal = document.createElement('div');
+        gal.className = 'mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2';
+        it.fotos.forEach(url=>{
+          const img = document.createElement('img');
+          img.src = url; img.loading = 'lazy'; img.className='rounded-xl w-full';
+          gal.appendChild(img);
+        });
+        el.appendChild(gal);
+      }
+
+      // Mini mapa
+      if (it.coords && typeof it.coords.lat==='number' && typeof it.coords.lng==='number'){
+        const mapDiv = document.createElement('div');
+        mapDiv.className = 'mt-2 h-44 w-full rounded-xl border';
+        el.appendChild(mapDiv);
+        setTimeout(()=>{
+          const mini = L.map(mapDiv, { zoomControl:false, attributionControl:false });
+          mini.setView([it.coords.lat, it.coords.lng], 15);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mini);
+          L.marker([it.coords.lat, it.coords.lng]).addTo(mini);
+        }, 50);
+      }
+
+      // Ações
+      const actions = document.createElement('div');
+      actions.className = 'mt-3 flex gap-2';
+      const btnDel = document.createElement('button');
+      btnDel.className = 'btn btn-ghost text-rose-600';
+      btnDel.textContent = 'Excluir';
+      btnDel.onclick = ()=> delReview(it);
+      actions.appendChild(btnDel);
+      el.appendChild(actions);
+
+      return el;
+    }
+
+    async function delReview(it){
+      if (!confirm('Remover esta avaliação?')) return;
+      try{
+        // Apaga fotos do Storage
+        if (Array.isArray(it.fotos)){
+          await Promise.all(it.fotos.map(url=>{
+            try{ return storage.refFromURL(url).delete(); }catch(e){ return Promise.resolve(); }
+          }));
+        }
+        await db.collection('reviews').doc(it.id).delete();
+      }catch(e){ alert('Erro ao excluir: '+e.message); }
+    }
+  </script>
+</body>
+</html>
